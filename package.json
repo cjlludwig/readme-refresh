@@ -1,0 +1,21 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "tsx script.ts",
+    "build": "tsc script.ts",
+    "start": "node script.js",
+    "check": "npm run dev -- --check",
+    "refresh": "npm run dev",
+    "refresh:interactive": "npm run dev -- --interactive",
+    "help": "npm run dev -- --help"
+  },
+  "dependencies": {
+    "openai": "^5.1.1",
+    "typescript": "^5.8.3",
+    "zx": "^8.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.4"
+  }
+}

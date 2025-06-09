@@ -1,0 +1,380 @@
+#!/usr/bin/env node
+
+// readme-refresh - CLI tool to automatically update README files
+import { $, echo, question, sleep, fs, path, chalk, argv } from 'zx'
+import OpenAI from 'openai'
+
+// Configuration
+$.verbose = argv.verbose || false
+const GITINGEST_SIZE_LIMIT = 50000
+const OPENAI_MODEL = 'gpt-4o'
+
+// OpenAI client - initialized only when needed
+let openai: OpenAI | null = null
+
+function getOpenAIClient(): OpenAI {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is required')
+    }
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    })
+  }
+  return openai
+}
+
+interface GitingestConfig {
+  sizeLimit: number
+  include: string[]
+  exclude: string[]
+  output: string
+}
+
+const DEFAULT_GITINGEST_CONFIGS: GitingestConfig[] = [
+  {
+    sizeLimit: GITINGEST_SIZE_LIMIT,
+    include: ['src/', 'README.md', 'package.json'],
+    exclude: ['*.snap', '*generated*'],
+    output: 'gitingest-output.txt'
+  },
+  {
+    sizeLimit: GITINGEST_SIZE_LIMIT,
+    include: ['tf/', 'k8s-tf/', 'deployment_manifest.yaml', 'package.json'],
+    exclude: ['.tf*'],
+    output: 'gitingest-output-tf.txt'
+  }
+]
+
+async function checkPythonEnvironment(): Promise<void> {
+  try {
+    const pythonPath = await $({ nothrow: true, quiet: true })`which python`
+    const pipPath = await $({ nothrow: true, quiet: true })`which pip`
+    
+    if (pythonPath.stdout.includes('pyenv')) {
+      echo(chalk.blue('🐍 Detected pyenv environment'))
+      const pyenvVersion = await $({ quiet: true })`pyenv version`
+      echo(chalk.dim(`   Python: ${pyenvVersion.stdout.trim()}`))
+    } else {
+      echo(chalk.blue('🐍 Using system Python'))
+      echo(chalk.dim(`   Python: ${pythonPath.stdout.trim()}`))
+    }
+  } catch (error) {
+    echo(chalk.yellow('⚠️  Could not detect Python environment'))
+  }
+}
+
+async function checkDependencies(): Promise<boolean> {
+  echo(chalk.blue('🔍 Checking dependencies...'))
+  
+  // Show Python environment info
+  await checkPythonEnvironment()
+  
+  let allGood = true
+  
+  // Check gitingest
+  try {
+    const gitingestResult = await $({ nothrow: true, quiet: true })`gitingest --help`
+    if (gitingestResult.exitCode === 0) {
+      echo(chalk.green('✅ gitingest found'))
+    } else {
+      echo(chalk.red('❌ gitingest not found. Install with: pip install gitingest'))
+      allGood = false
+    }
+  } catch (error) {
+    echo(chalk.red('❌ gitingest not found. Install with: pip install gitingest'))
+    allGood = false
+  }
+  
+  // Check markdownlint
+  try {
+    const markdownlintResult = await $({ nothrow: true, quiet: true })`markdownlint --version`
+    if (markdownlintResult.exitCode === 0) {
+      echo(chalk.green('✅ markdownlint-cli found'))
+    } else {
+      echo(chalk.red('❌ markdownlint-cli not found. Install with: npm install -g markdownlint-cli OR brew install markdownlint-cli'))
+      allGood = false
+    }
+  } catch (error) {
+    echo(chalk.red('❌ markdownlint-cli not found. Install with: npm install -g markdownlint-cli OR brew install markdownlint-cli'))
+    allGood = false
+  }
+  
+  // Check OpenAI API key
+  if (!process.env.OPENAI_API_KEY) {
+    echo(chalk.red('❌ OPENAI_API_KEY environment variable not set'))
+    allGood = false
+  } else {
+    echo(chalk.green('✅ OpenAI API key found'))
+  }
+  
+  return allGood
+}
+
+async function runGitingest(config: GitingestConfig): Promise<boolean> {
+  echo(chalk.yellow(`📝 Running gitingest for ${config.output}...`))
+  
+  try {
+    // Build command parts
+    const cmd = ['gitingest', '-s', String(config.sizeLimit)]
+    
+    // Add include patterns
+    for (const pattern of config.include) {
+      cmd.push('-i', pattern)
+    }
+    
+    // Add exclude patterns  
+    for (const pattern of config.exclude) {
+      cmd.push('-e', pattern)
+    }
+    
+    // Add output and source
+    cmd.push('-o', config.output, '.')
+    
+    const result = await $({ nothrow: true })`${cmd}`
+    
+    if (result.exitCode === 0) {
+      echo(chalk.green(`✅ Generated ${config.output}`))
+      return true
+    } else {
+      echo(chalk.red(`❌ Failed to generate ${config.output}`))
+      if (result.stderr) {
+        echo(chalk.dim(result.stderr))
+      }
+      return false
+    }
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    echo(chalk.red(`❌ Error running gitingest: ${errorMessage}`))
+    return false
+  }
+}
+
+async function readPromptFile(promptPath: string): Promise<string> {
+  try {
+    return await fs.readFile(promptPath, 'utf-8')
+  } catch (error) {
+    throw new Error(`Failed to read prompt file: ${promptPath}`)
+  }
+}
+
+async function readGitingestOutput(outputPath: string): Promise<string> {
+  try {
+    if (await fs.pathExists(outputPath)) {
+      return await fs.readFile(outputPath, 'utf-8')
+    }
+    return ''
+  } catch (error) {
+    echo(chalk.yellow(`⚠️  Could not read ${outputPath}: ${error}`))
+    return ''
+  }
+}
+
+async function callOpenAI(systemPrompt: string, userContent: string, context: string = ''): Promise<string> {
+  const messages: any[] = [
+    { role: 'system', content: systemPrompt }
+  ]
+  
+  if (context) {
+    messages.push({ role: 'user', content: `Context:\n${context}` })
+  }
+  
+  messages.push({ role: 'user', content: userContent })
+  
+  try {
+    const response = await getOpenAIClient().chat.completions.create({
+      model: OPENAI_MODEL,
+      messages,
+      temperature: 0.1,
+      max_tokens: 4000
+    })
+    
+    return response.choices[0]?.message?.content || ''
+  } catch (error) {
+    throw new Error(`OpenAI API call failed: ${error}`)
+  }
+}
+
+async function processPromptStep(step: number, promptFile: string, context: string = ''): Promise<string> {
+  echo(chalk.blue(`🤖 Processing step ${step}: ${promptFile}`))
+  
+  const promptPath = path.join('prompts', promptFile)
+  const systemPrompt = await readPromptFile(promptPath)
+  
+  // Read current README content
+  const currentReadme = await fs.readFile('README.md', 'utf-8')
+  
+  let userContent = `Current README.md content:\n\n${currentReadme}`
+  
+  if (context) {
+    userContent += `\n\nAdditional Context:\n${context}`
+  }
+  
+  const result = await callOpenAI(systemPrompt, userContent, context)
+  
+  if (!result) {
+    throw new Error(`No response from OpenAI for step ${step}`)
+  }
+  
+  return result
+}
+
+async function updateReadme(content: string): Promise<void> {
+  // Extract README content from response (remove any wrapper text)
+  let readmeContent = content
+  
+  // If the response contains markdown code blocks, extract the content
+  const markdownMatch = content.match(/```(?:markdown)?\n([\s\S]*?)\n```/)
+  if (markdownMatch) {
+    readmeContent = markdownMatch[1]
+  }
+  
+  // Backup current README
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  await fs.copy('README.md', `README.md.backup-${timestamp}`)
+  
+  // Write new README
+  await fs.writeFile('README.md', readmeContent.trim() + '\n')
+  echo(chalk.green('✅ README.md updated'))
+}
+
+async function formatReadme(): Promise<void> {
+  echo(chalk.blue('📐 Formatting README.md with markdownlint...'))
+  
+  // First try to auto-fix what we can
+  const fixResult = await $({ nothrow: true })`markdownlint --fix README.md`
+  
+  if (fixResult.exitCode === 0) {
+    echo(chalk.green('✅ README.md formatted successfully'))
+  } else {
+    // If there are issues that can't be auto-fixed, show them as warnings
+    echo(chalk.yellow('⚠️  Some markdown issues found:'))
+    if (fixResult.stderr) {
+      echo(chalk.dim(fixResult.stderr))
+    }
+    if (fixResult.stdout) {
+      echo(chalk.dim(fixResult.stdout))
+    }
+    echo(chalk.yellow('💡 Some issues may need manual fixing'))
+  }
+}
+
+async function runWorkflow(): Promise<void> {
+  const originalDir = process.cwd()
+  
+  try {
+    echo(chalk.blue('🚀 Starting README refresh workflow'))
+    
+    // Check dependencies
+    if (!await checkDependencies()) {
+      throw new Error('Missing required dependencies')
+    }
+    
+    // Generate gitingest context files
+    echo(chalk.blue('📊 Generating context with gitingest...'))
+    
+    for (const config of DEFAULT_GITINGEST_CONFIGS) {
+      await runGitingest(config)
+    }
+    
+    // Process prompts in sequence
+    const prompts = [
+      { step: 1, file: '1_prep_readme.txt', context: '' },
+      { step: 2, file: '2_external_sources.txt', context: '' },
+      { step: 3, file: '3_gitingest.txt', context: await readGitingestOutput('gitingest-output.txt') }
+    ]
+    
+    for (const prompt of prompts) {
+      try {
+        const result = await processPromptStep(prompt.step, prompt.file, prompt.context)
+        await updateReadme(result)
+        
+        if (argv.interactive) {
+          const shouldContinue = await question('Continue to next step? (y/n): ')
+          if (shouldContinue.toLowerCase() !== 'y') {
+            break
+          }
+        }
+        
+        // Small delay between API calls
+        await sleep(1000)
+        
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        echo(chalk.red(`❌ Failed at step ${prompt.step}: ${errorMessage}`))
+        if (!argv.continue) {
+          throw error
+        }
+      }
+    }
+    
+    // Format the final README
+    await formatReadme()
+    
+    // Cleanup gitingest files unless requested to keep
+    if (!argv.keepContext) {
+      for (const config of DEFAULT_GITINGEST_CONFIGS) {
+        await fs.remove(config.output).catch(() => {})
+      }
+      echo(chalk.dim('🧹 Cleaned up gitingest context files'))
+    }
+    
+    echo(chalk.green('🎉 README refresh completed successfully!'))
+    
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    echo(chalk.red('❌ Workflow failed:'), errorMessage)
+    process.exit(1)
+  }
+}
+
+async function showHelp(): Promise<void> {
+  echo(`
+${chalk.blue('readme-refresh')} - Automatically update README files with current project context
+
+${chalk.yellow('Usage:')}
+  npm run dev [options]
+
+${chalk.yellow('Options:')}
+  --help          Show this help message
+  --verbose       Show detailed command output
+  --interactive   Pause between each step for review
+  --continue      Continue on errors instead of stopping
+  --keep-context  Keep gitingest output files after completion
+  --check         Only check dependencies, don't run workflow
+
+${chalk.yellow('Environment Variables:')}
+  OPENAI_API_KEY  Required - Your OpenAI API key
+
+${chalk.yellow('Examples:')}
+  npm run dev                    # Run full workflow
+  npm run dev -- --interactive  # Run with manual step approval
+  npm run dev -- --verbose      # Show detailed output
+  npm run dev -- --check        # Check dependencies only
+
+${chalk.yellow('For pyenv users:')}
+  Make sure pyenv shims are first in your PATH:
+  export PATH="$HOME/.pyenv/shims:$PATH"
+`)
+}
+
+async function main(): Promise<void> {
+  if (argv.help || argv.h) {
+    await showHelp()
+    return
+  }
+  
+  if (argv.check) {
+    const depsOk = await checkDependencies()
+    process.exit(depsOk ? 0 : 1)
+    return
+  }
+  
+  await runWorkflow()
+}
+
+// Run the main function
+main().catch((error) => {
+  echo(chalk.red('💥 Fatal error:'), error.message)
+  process.exit(1)
+})
