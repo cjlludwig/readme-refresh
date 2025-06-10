@@ -214,7 +214,6 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
         echo(chalk.yellow(`   Incomplete: ${response.incomplete_details.reason}`))
       }
     }
-    echo(chalk.dim(response.output_text))
     
     return response.output_text || ''
   } catch (error: unknown) {
