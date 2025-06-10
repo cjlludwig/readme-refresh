@@ -7,7 +7,7 @@ import OpenAI from 'openai'
 // Configuration
 $.verbose = argv.verbose || false
 const GITINGEST_SIZE_LIMIT = 50000
-const OPENAI_MODEL = 'gpt-4o'
+const OPENAI_MODEL = 'gpt-4.1-nano' // Cheapest model by default $0.10 per 1M tokens
 
 // OpenAI client - initialized only when needed
 let openai: OpenAI | null = null
@@ -171,27 +171,55 @@ async function readGitingestOutput(outputPath: string): Promise<string> {
 }
 
 async function callOpenAI(systemPrompt: string, userContent: string, context: string = ''): Promise<string> {
-  const messages: any[] = [
-    { role: 'system', content: systemPrompt }
-  ]
+  let combinedInput = userContent + '\n\n'
   
   if (context) {
-    messages.push({ role: 'user', content: `Context:\n${context}` })
+    combinedInput += `Context:\n${context}\n\n`
   }
   
-  messages.push({ role: 'user', content: userContent })
-  
   try {
-    const response = await getOpenAIClient().chat.completions.create({
+    const response = await getOpenAIClient().responses.create({
       model: OPENAI_MODEL,
-      messages,
-      temperature: 0.1,
-      max_tokens: 4000
+      instructions: systemPrompt,
+      input: combinedInput
     })
     
-    return response.choices[0]?.message?.content || ''
-  } catch (error) {
-    throw new Error(`OpenAI API call failed: ${error}`)
+    // Debug logging when DEBUG_MODE is enabled
+    if (process.env.DEBUG_MODE) {
+      echo(chalk.blue(`🤖 Response Debug Info:`))
+      echo(chalk.dim(`   ID: ${response.id}`))
+      echo(chalk.dim(`   Model: ${response.model}`))
+      echo(chalk.dim(`   Status: ${response.status || 'completed'}`))
+      echo(chalk.dim(`   Created: ${new Date(response.created_at * 1000).toISOString()}`))
+      
+      if (response.usage) {
+        echo(chalk.dim(`   Tokens - Input: ${response.usage.input_tokens}, Output: ${response.usage.output_tokens}, Total: ${response.usage.total_tokens}`))
+        
+        // Safely access output token details
+        if (response.usage.output_tokens_details) {
+          const details: any = response.usage.output_tokens_details
+          echo(chalk.dim(`   Output breakdown - Available properties: ${Object.keys(details).join(', ')}`))
+        }
+      }
+      
+      if (response.temperature !== null) {
+        echo(chalk.dim(`   Temperature: ${response.temperature}`))
+      }
+      
+      if (response.error) {
+        echo(chalk.red(`   Error: ${response.error.message || 'Unknown error'}`))
+      }
+      
+      if (response.incomplete_details) {
+        echo(chalk.yellow(`   Incomplete: ${response.incomplete_details.reason}`))
+      }
+    }
+    echo(chalk.dim(response.output_text))
+    
+    return response.output_text || ''
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    throw new Error(`OpenAI API call failed: ${errorMessage}`)
   }
 }
 
@@ -204,11 +232,7 @@ async function processPromptStep(step: number, promptFile: string, context: stri
   // Read current README content
   const currentReadme = await fs.readFile('README.md', 'utf-8')
   
-  let userContent = `Current README.md content:\n\n${currentReadme}`
-  
-  if (context) {
-    userContent += `\n\nAdditional Context:\n${context}`
-  }
+  const userContent = `Current README.md content:\n\n${currentReadme}`
   
   const result = await callOpenAI(systemPrompt, userContent, context)
   
@@ -220,21 +244,12 @@ async function processPromptStep(step: number, promptFile: string, context: stri
 }
 
 async function updateReadme(content: string): Promise<void> {
-  // Extract README content from response (remove any wrapper text)
-  let readmeContent = content
-  
-  // If the response contains markdown code blocks, extract the content
-  const markdownMatch = content.match(/```(?:markdown)?\n([\s\S]*?)\n```/)
-  if (markdownMatch) {
-    readmeContent = markdownMatch[1]
-  }
-  
   // Backup current README
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   await fs.copy('README.md', `README.md.backup-${timestamp}`)
   
   // Write new README
-  await fs.writeFile('README.md', readmeContent.trim() + '\n')
+  await fs.writeFile('README.md', content.trim() + '\n')
   echo(chalk.green('✅ README.md updated'))
 }
 
@@ -345,6 +360,9 @@ ${chalk.yellow('Options:')}
 
 ${chalk.yellow('Environment Variables:')}
   OPENAI_API_KEY  Required - Your OpenAI API key
+
+${chalk.yellow('AI Model:')}
+  Uses gpt-4.1-nano (cost-effective: $0.10 per 1M input tokens, $0.40 per 1M output tokens)
 
 ${chalk.yellow('Examples:')}
   npm run dev                    # Run full workflow
