@@ -34,15 +34,21 @@ interface GitingestConfig {
 const DEFAULT_GITINGEST_CONFIGS: GitingestConfig[] = [
   {
     sizeLimit: GITINGEST_SIZE_LIMIT,
-    include: ['src/', 'README.md', 'package.json'],
+    include: ['src/', 'package.json', '*.ts'],
     exclude: ['*.snap', '*generated*'],
-    output: 'gitingest-output.txt'
+    output: 'gitingest-code.txt'
+  },
+  {
+    sizeLimit: GITINGEST_SIZE_LIMIT,
+    include: ['src/', 'package.json', 'README.md'],
+    exclude: ['*.snap', '*generated*'],
+    output: 'gitingest-llm.txt'
   },
   {
     sizeLimit: GITINGEST_SIZE_LIMIT,
     include: ['tf/', 'k8s-tf/', 'deployment_manifest.yaml', 'package.json'],
     exclude: ['.tf*'],
-    output: 'gitingest-output-tf.txt'
+    output: 'gitingest-tf.txt'
   }
 ]
 
@@ -111,6 +117,36 @@ async function checkDependencies(): Promise<boolean> {
   return allGood
 }
 
+async function debugGitingest(): Promise<void> {
+  echo(chalk.blue('🔍 Testing gitingest configurations...'))
+  
+  for (const [index, config] of DEFAULT_GITINGEST_CONFIGS.entries()) {
+    echo(chalk.yellow(`\n📋 Testing config ${index + 1}: ${config.output}`))
+    echo(chalk.dim(`   Include: ${config.include.join(', ')}`))
+    echo(chalk.dim(`   Exclude: ${config.exclude.join(', ')}`))
+    echo(chalk.dim(`   Size limit: ${config.sizeLimit}`))
+    
+    // Build the exact command that will be run
+    const cmd = ['gitingest', '-s', String(config.sizeLimit)]
+    
+    for (const pattern of config.include) {
+      cmd.push('-i', pattern)
+    }
+    
+    for (const pattern of config.exclude) {
+      cmd.push('-e', pattern)
+    }
+    
+    cmd.push('-o', config.output, '.')
+    
+    echo(chalk.dim(`   Command: ${cmd.join(' ')}`))
+    
+    // Run it
+    const result = await runGitingest(config)
+    echo(result ? chalk.green('   ✅ Success') : chalk.red('   ❌ Failed'))
+  }
+}
+
 async function runGitingest(config: GitingestConfig): Promise<boolean> {
   echo(chalk.yellow(`📝 Running gitingest for ${config.output}...`))
   
@@ -131,15 +167,36 @@ async function runGitingest(config: GitingestConfig): Promise<boolean> {
     // Add output and source
     cmd.push('-o', config.output, '.')
     
+    // Debug: show the exact command being run
+    if (argv.verbose || process.env.DEBUG_MODE) {
+      echo(chalk.dim(`   Executing: ${cmd.join(' ')}`))
+    }
+    
     const result = await $({ nothrow: true })`${cmd}`
     
     if (result.exitCode === 0) {
       echo(chalk.green(`✅ Generated ${config.output}`))
+      
+      // Check if file actually exists and has content
+      try {
+        const stats = await fs.stat(config.output)
+        echo(chalk.dim(`   File size: ${stats.size} bytes`))
+        
+        if (stats.size === 0) {
+          echo(chalk.yellow(`⚠️  Warning: ${config.output} is empty`))
+        }
+      } catch (statError) {
+        echo(chalk.yellow(`⚠️  Warning: Could not stat ${config.output}`))
+      }
+      
       return true
     } else {
-      echo(chalk.red(`❌ Failed to generate ${config.output}`))
+      echo(chalk.red(`❌ Failed to generate ${config.output} (exit code: ${result.exitCode})`))
       if (result.stderr) {
-        echo(chalk.dim(result.stderr))
+        echo(chalk.red(`   Error: ${result.stderr}`))
+      }
+      if (result.stdout) {
+        echo(chalk.dim(`   Output: ${result.stdout}`))
       }
       return false
     }
@@ -180,8 +237,9 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
   try {
     const response = await getOpenAIClient().responses.create({
       model: OPENAI_MODEL,
+      user: "cludwig_testing", // TODO: Replace with session ID post testing
       instructions: systemPrompt,
-      input: combinedInput
+      input: combinedInput,
     })
     
     // Debug logging when DEBUG_MODE is enabled
@@ -193,13 +251,7 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
       echo(chalk.dim(`   Created: ${new Date(response.created_at * 1000).toISOString()}`))
       
       if (response.usage) {
-        echo(chalk.dim(`   Tokens - Input: ${response.usage.input_tokens}, Output: ${response.usage.output_tokens}, Total: ${response.usage.total_tokens}`))
-        
-        // Safely access output token details
-        if (response.usage.output_tokens_details) {
-          const details: any = response.usage.output_tokens_details
-          echo(chalk.dim(`   Output breakdown - Available properties: ${Object.keys(details).join(', ')}`))
-        }
+        echo(chalk.dim(`   Usage: ${JSON.stringify(response.usage)}`))
       }
       
       if (response.temperature !== null) {
@@ -291,12 +343,23 @@ async function runWorkflow(): Promise<void> {
       await runGitingest(config)
     }
     
-    // Process prompts in sequence
+    // Process prompts in sequence - conditionally include step 2 based on --confluence flag
     const prompts = [
-      { step: 1, file: '1_prep_readme.txt', context: '' },
-      { step: 2, file: '2_external_sources.txt', context: '' },
-      { step: 3, file: '3_gitingest.txt', context: await readGitingestOutput('gitingest-output.txt') }
+      { step: 1, file: '1_prep_readme.txt', context: '' }
     ]
+    
+    // Add step 2 only if --confluence flag is provided
+    if (argv.confluence) {
+      echo(chalk.blue('🔗 Including Confluence MCP server step'))
+      prompts.push({ step: 2, file: '2_external_sources.txt', context: '' })
+    }
+    
+    // Always include step 3
+    prompts.push({ 
+      step: argv.confluence ? 3 : 2, 
+      file: '3_gitingest.txt', 
+      context: await readGitingestOutput('gitingest-code.txt') 
+    })
     
     for (const prompt of prompts) {
       try {
@@ -309,9 +372,6 @@ async function runWorkflow(): Promise<void> {
             break
           }
         }
-        
-        // Small delay between API calls
-        await sleep(1000)
         
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error)
@@ -356,18 +416,21 @@ ${chalk.yellow('Options:')}
   --continue      Continue on errors instead of stopping
   --keep-context  Keep gitingest output files after completion
   --check         Only check dependencies, don't run workflow
+  --confluence    Include step 2 (external sources) using Confluence MCP server
 
 ${chalk.yellow('Environment Variables:')}
   OPENAI_API_KEY  Required - Your OpenAI API key
+  DEBUG_MODE      Optional - Enable detailed API response logging
 
 ${chalk.yellow('AI Model:')}
   Uses gpt-4.1-nano (cost-effective: $0.10 per 1M input tokens, $0.40 per 1M output tokens)
 
 ${chalk.yellow('Examples:')}
-  npm run dev                    # Run full workflow
-  npm run dev -- --interactive  # Run with manual step approval
-  npm run dev -- --verbose      # Show detailed output
-  npm run dev -- --check        # Check dependencies only
+  npm run dev                        # Run basic workflow (steps 1 & 2)
+  npm run dev -- --confluence       # Run with Confluence MCP server (steps 1, 2 & 3)
+  npm run dev -- --interactive      # Run with manual step approval
+  npm run dev -- --verbose          # Show detailed output
+  npm run dev -- --check            # Check dependencies only
 
 ${chalk.yellow('For pyenv users:')}
   Make sure pyenv shims are first in your PATH:
@@ -384,6 +447,11 @@ async function main(): Promise<void> {
   if (argv.check) {
     const depsOk = await checkDependencies()
     process.exit(depsOk ? 0 : 1)
+    return
+  }
+  
+  if (argv['debug-gitingest']) {
+    await debugGitingest()
     return
   }
   
