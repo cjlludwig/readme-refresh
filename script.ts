@@ -13,6 +13,16 @@ const OPENAI_MODEL = 'gpt-4.1-nano' // Cheapest model by default $0.10 per 1M to
 // OpenAI client - initialized only when needed
 let openai: OpenAI | null = null
 
+// Generate a random session ID once per run
+function generateSessionId(): string {
+  // Use a simple, readable random string (base36 timestamp + random)
+  return (
+    Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)
+  )
+}
+
+const SESSION_ID = generateSessionId()
+
 function getOpenAIClient(): OpenAI {
   if (!openai) {
     if (!process.env.OPENAI_API_KEY) {
@@ -246,7 +256,7 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
   try {
     const response = await getOpenAIClient().responses.create({
       model: OPENAI_MODEL,
-      user: "cludwig_testing", // TODO: Replace with session ID post testing
+      user: SESSION_ID, // Use the randomized session ID for all OpenAI calls
       instructions: systemPrompt,
       input: combinedInput,
       ...(previousId && {previous_response_id: previousId})
@@ -259,6 +269,7 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
       if (previousId) {
         echo(chalk.dim(`   Prev ID: ${previousId}`))
       }
+      echo(chalk.dim(`   Session ID: ${SESSION_ID}`))
       echo(chalk.dim(`   Model: ${response.model}`))
       echo(chalk.dim(`   Status: ${response.status || 'completed'}`))
       echo(chalk.dim(`   Created: ${new Date(response.created_at * 1000).toISOString()}`))
@@ -294,14 +305,15 @@ async function processPromptStep(step: number, promptFile: string, context: stri
   echo(chalk.blue(`🤖 Processing step ${step}: ${promptFile}`))
   
   const promptPath = path.join('prompts', promptFile)
-  const rawPrompt = await readFile(promptPath);
+  const systemPrompt = await readFile(promptPath);
   const template = await readFile('templates/README_TEMPLATE.md');
-  const systemPrompt = `${rawPrompt}\n\n---\nREADME Format:\n\n${template}`
+  // const systemPrompt = `README Format:\n\n${template}\n\n---\n${rawPrompt}`
   
   // Read current README content
   const currentReadme = await readFile('README.md')
   
-  const userContent = `Current README.md content:\n\n${currentReadme}`
+  // Place static content early for cache
+  const userContent = `README Format:\n\n${template}\n\n---\nCurrent README.md content:\n\n${currentReadme}`
   
   const result = await callOpenAI(systemPrompt, userContent, context, previousId)
   
