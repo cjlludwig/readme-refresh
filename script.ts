@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // readme-refresh - CLI tool to automatically update README files
-import { $, echo, question, sleep, fs, path, chalk, argv } from 'zx'
+import { $, echo, question, fs, path, chalk, argv } from 'zx'
 import OpenAI from 'openai'
+import { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/responses'
 
 // Configuration
 $.verbose = argv.verbose || false
@@ -29,6 +30,11 @@ interface GitingestConfig {
   include: string[]
   exclude: string[]
   output: string
+}
+
+interface OpenAIResponse {
+  content: string
+  responseId: string
 }
 
 const DEFAULT_GITINGEST_CONFIGS: GitingestConfig[] = [
@@ -207,18 +213,21 @@ async function runGitingest(config: GitingestConfig): Promise<boolean> {
   }
 }
 
-async function readPromptFile(promptPath: string): Promise<string> {
+async function readFile(filePath: string): Promise<string> {
   try {
-    return await fs.readFile(promptPath, 'utf-8')
+    if (await fs.pathExists(filePath)) {
+        return await fs.readFile(filePath, 'utf-8')
+    }
+    throw new Error(`File does not exist: ${filePath}`)
   } catch (error) {
-    throw new Error(`Failed to read prompt file: ${promptPath}`)
+    throw new Error(`Failed to read file: ${filePath}`)
   }
 }
 
 async function readGitingestOutput(outputPath: string): Promise<string> {
   try {
     if (await fs.pathExists(outputPath)) {
-      return await fs.readFile(outputPath, 'utf-8')
+      return await readFile(outputPath)
     }
     return ''
   } catch (error) {
@@ -227,11 +236,11 @@ async function readGitingestOutput(outputPath: string): Promise<string> {
   }
 }
 
-async function callOpenAI(systemPrompt: string, userContent: string, context: string = ''): Promise<string> {
-  let combinedInput = userContent + '\n\n'
+async function callOpenAI(systemPrompt: string, userContent: string, context: string = '', previousId: string = ''): Promise<OpenAIResponse> {
+  let combinedInput = userContent;
   
   if (context) {
-    combinedInput += `Context:\n${context}\n\n`
+    combinedInput += `'\n\n'Context:\n${context}\n`
   }
   
   try {
@@ -240,12 +249,16 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
       user: "cludwig_testing", // TODO: Replace with session ID post testing
       instructions: systemPrompt,
       input: combinedInput,
-    })
+      ...(previousId && {previous_response_id: previousId})
+    } as ResponseCreateParamsNonStreaming)
     
     // Debug logging when DEBUG_MODE is enabled
     if (process.env.DEBUG_MODE) {
       echo(chalk.blue(`🤖 Response Debug Info:`))
       echo(chalk.dim(`   ID: ${response.id}`))
+      if (previousId) {
+        echo(chalk.dim(`   Prev ID: ${previousId}`))
+      }
       echo(chalk.dim(`   Model: ${response.model}`))
       echo(chalk.dim(`   Status: ${response.status || 'completed'}`))
       echo(chalk.dim(`   Created: ${new Date(response.created_at * 1000).toISOString()}`))
@@ -267,27 +280,32 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
       }
     }
     
-    return response.output_text || ''
+    return {
+      content: response.output_text || '',
+      responseId: response.id
+    }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     throw new Error(`OpenAI API call failed: ${errorMessage}`)
   }
 }
 
-async function processPromptStep(step: number, promptFile: string, context: string = ''): Promise<string> {
+async function processPromptStep(step: number, promptFile: string, context: string = '', previousId: string = ''): Promise<OpenAIResponse> {
   echo(chalk.blue(`🤖 Processing step ${step}: ${promptFile}`))
   
   const promptPath = path.join('prompts', promptFile)
-  const systemPrompt = await readPromptFile(promptPath)
+  const rawPrompt = await readFile(promptPath);
+  const template = await readFile('templates/README_TEMPLATE.md');
+  const systemPrompt = `${rawPrompt}\n\n---\nREADME Format:\n\n${template}`
   
   // Read current README content
-  const currentReadme = await fs.readFile('README.md', 'utf-8')
+  const currentReadme = await readFile('README.md')
   
   const userContent = `Current README.md content:\n\n${currentReadme}`
   
-  const result = await callOpenAI(systemPrompt, userContent, context)
+  const result = await callOpenAI(systemPrompt, userContent, context, previousId)
   
-  if (!result) {
+  if (!result.content) {
     throw new Error(`No response from OpenAI for step ${step}`)
   }
   
@@ -326,8 +344,6 @@ async function formatReadme(): Promise<void> {
 }
 
 async function runWorkflow(): Promise<void> {
-  const originalDir = process.cwd()
-  
   try {
     echo(chalk.blue('🚀 Starting README refresh workflow'))
     
@@ -357,14 +373,23 @@ async function runWorkflow(): Promise<void> {
     // Always include step 3
     prompts.push({ 
       step: argv.confluence ? 3 : 2, 
-      file: '3_gitingest.txt', 
+      file: '3_gitingest_readme.txt', 
       context: await readGitingestOutput('gitingest-code.txt') 
     })
     
+    let previousResponseId = ''
+    
     for (const prompt of prompts) {
       try {
-        const result = await processPromptStep(prompt.step, prompt.file, prompt.context)
-        await updateReadme(result)
+        const result = await processPromptStep(prompt.step, prompt.file, prompt.context, previousResponseId)
+        await updateReadme(result.content)
+        
+        // Update previousResponseId for next iteration
+        previousResponseId = result.responseId
+        
+        if (process.env.DEBUG_MODE) {
+          echo(chalk.dim(`   Response ID for step ${prompt.step}: ${result.responseId}`))
+        }
         
         if (argv.interactive) {
           const shouldContinue = await question('Continue to next step? (y/n): ')

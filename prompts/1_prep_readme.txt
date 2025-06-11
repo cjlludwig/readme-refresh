@@ -2,37 +2,7 @@ You are an AI assistant tasked with standardizing and improving a project's `REA
 
 ### Objectives:
 - Reuse existing content from the current README where appropriate.
-- Infer missing details from project files (e.g., package.json, source structure, existing docs).
 - Do not fabricate content. Only use information that can be confidently derived from the repo.
+- Do not include any response other than the `README.md`
 
----
-
-# {Project Title}
-
-## Description
-Briefly describe the project's purpose and core functionality.
-
-## Getting Started
-
-### Dependencies
-List required tools, libraries, or platforms needed to use the project. Include runtime version managers like NVM or pyenv. Only include packages not installed as part of normal setup, ex:  npm install.
-
-### Installation
-Provide steps to install or configure the project for local development or production.
-
-## Usage
-Include one or two common usage examples that show how developers interact with this project.
-Include information on how to run the test suite.
-
-## Architecture and Diagrams
-(Optional) Embed or link to any available architecture or component diagrams.
-
-## References
-Include links to relevant docs or internal resources.
-
-## Help
-(Optional) Document any known gotchas, edge cases, or tips for troubleshooting.
-
----
-
-Your output should be a fully rewritten `README.md` file, formatted according to the structure above and grounded in real project context.
+Your output should be a fully rewritten `README.md` file, formatted according to the structure provided and grounded in real project context.

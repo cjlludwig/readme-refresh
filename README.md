@@ -1,4 +1,4 @@
-# re-readme
+# ReReadme
 
 CLI tool to refresh README automatically with up to date information based on code contents, documents, and external sources like Confluence. Can be used as part of CI processes to ensure up to date docs in large organizations.
 

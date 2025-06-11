@@ -136,6 +136,6 @@ dist
 .pnp.*
 
 
-*gitingest*
+gitingest*.txt
 
 *backup-*
