@@ -190,3 +190,7 @@ rereadme/
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [Gitingest Documentation](https://github.com/cyclotruc/gitingest)
 - [Markdownlint CLI](https://github.com/igorshubovych/markdownlint-cli)
+
+## Credits
+
+- This project integrates gitingest (for code context), OpenAI (for content generation), and Confluence (for external documentation) to deliver up-to-date, well-structured README documentation.
