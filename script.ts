@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename)
 // Configuration
 $.verbose = argv.verbose || false
 const GITINGEST_SIZE_LIMIT = 50000
-const OPENAI_MODEL = 'gpt-4.1-nano' // Cheapest model by default $0.10 per 1M tokens
+const OPENAI_MODEL = argv.model || 'gpt-5-nano' // Allow override via --model, fallback to cheapest model by default $0.10 per 1M tokens
 const INPUT_FILE = argv.input || 'README.md'
 const OUTPUT_FILE = argv.output || 'README.md'
 
@@ -483,6 +483,7 @@ ${chalk.yellow('Options:')}
   --confluence    Include step 2 (external sources) using Confluence MCP server
   --input FILE    Read current content from specified file instead of README.md
   --output FILE   Output to specified file instead of README.md
+  --model MODEL   Override the default OpenAI model (default: gpt-4.1-nano)
 
 ${chalk.yellow('Environment Variables:')}
   OPENAI_API_KEY  Required - Your OpenAI API key
@@ -497,6 +498,7 @@ ${chalk.yellow('Examples:')}
   rereadme --interactive             # Run with manual step approval
   rereadme --verbose                 # Show detailed output
   rereadme --check                   # Check dependencies only
+  rereadme --model gpt-4o            # Use a different OpenAI model
   rereadme --output README-v2.md     # Output to custom filename
   rereadme --input some_doc.md --output test_doc.md  # Read from one file, write to another
 
