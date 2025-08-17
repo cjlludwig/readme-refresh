@@ -17,13 +17,13 @@
   ],
   "author": "Connor Ludwig",
   "license": "MIT",
-  "homepage": "https://github.com/connorludwig/readme-refresh#readme",
+  "homepage": "https://github.com/connorludwig/rereadme#readme",
   "bugs": {
-    "url": "https://github.com/connorludwig/readme-refresh/issues"
+    "url": "https://github.com/connorludwig/rereadme/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/connorludwig/readme-refresh.git"
+    "url": "git+https://github.com/connorludwig/rereadme.git"
   },
   "scripts": {
     "dev": "tsx script.ts",

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// readme-refresh - CLI tool to automatically update README files
+// rereadme - CLI tool to automatically update README files
 import { $, echo, question, fs, path, chalk, argv } from 'zx'
 import OpenAI from 'openai'
 import { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/responses'

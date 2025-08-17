@@ -4,7 +4,7 @@ CLI tool to refresh README automatically with up to date information based on co
 
 ## Description
 
-The readme-refresh tool automates the process of keeping README files current by:
+The rereadme tool automates the process of keeping README files current by:
 
 1. **Analyzing your codebase** - Uses gitingest to extract project structure and code context
 2. **Processing with AI** - Leverages OpenAI's API to understand and improve documentation
@@ -52,8 +52,8 @@ export PATH="$HOME/.pyenv/shims:$PATH"
 
 ```shell
 # Install from source (for development/testing)
-git clone https://github.com/connorludwig/readme-refresh.git
-cd readme-refresh
+git clone https://github.com/connorludwig/rereadme.git
+cd rereadme
 npm install
 npm link
 
@@ -65,8 +65,8 @@ rereadme --help
 
 ```shell
 # Clone and install locally
-git clone https://github.com/connorludwig/readme-refresh.git
-cd readme-refresh
+git clone https://github.com/connorludwig/rereadme.git
+cd rereadme
 npm install
 
 # Check dependencies
@@ -158,7 +158,7 @@ The tool is built using:
 ### Project Structure
 
 ```
-readme-refresh/
+rereadme/
 ├── script.ts              # Main CLI application
 ├── prompts/               # AI prompt templates
 │   ├── 1_prep_readme.txt  # README standardization
