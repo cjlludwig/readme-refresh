@@ -441,10 +441,10 @@ async function runWorkflow(): Promise<void> {
 
 async function showHelp(): Promise<void> {
   echo(`
-${chalk.blue('readme-refresh')} - Automatically update README files with current project context
+${chalk.blue('rereadme')} - Automatically update README files with current project context
 
 ${chalk.yellow('Usage:')}
-  npm run dev [options]
+  rereadme [options]
 
 ${chalk.yellow('Options:')}
   --help          Show this help message
@@ -463,11 +463,11 @@ ${chalk.yellow('AI Model:')}
   Uses gpt-4.1-nano (cost-effective: $0.10 per 1M input tokens, $0.40 per 1M output tokens)
 
 ${chalk.yellow('Examples:')}
-  npm run dev                        # Run basic workflow (steps 1 & 2)
-  npm run dev -- --confluence       # Run with Confluence MCP server (steps 1, 2 & 3)
-  npm run dev -- --interactive      # Run with manual step approval
-  npm run dev -- --verbose          # Show detailed output
-  npm run dev -- --check            # Check dependencies only
+  rereadme                        # Run basic workflow (steps 1 & 2)
+  rereadme --confluence           # Run with Confluence MCP server (steps 1, 2 & 3)
+  rereadme --interactive          # Run with manual step approval
+  rereadme --verbose              # Show detailed output
+  rereadme --check                # Check dependencies only
 
 ${chalk.yellow('For pyenv users:')}
   Make sure pyenv shims are first in your PATH:

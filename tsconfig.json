@@ -13,7 +13,8 @@
     "noEmit": false,
     "outDir": "./dist",
     "rootDir": "./",
-    "types": ["node"]
+    "downlevelIteration": true,
+    "types": ["node", "jest"]
   },
   "include": [
     "*.ts",

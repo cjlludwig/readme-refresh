@@ -139,3 +139,4 @@ dist
 gitingest*.txt
 
 *backup-*
+script.js
