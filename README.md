@@ -43,48 +43,76 @@ export PATH="$HOME/.pyenv/shims:$PATH"
 - Confluence MCP integration for external documentation sources
 
 **Troubleshooting Dependencies:**
-- Run `npm run check` to verify all tools are installed correctly
+- Run `rereadme --check` to verify all tools are installed correctly (or `npm run check` if using locally)
 - For markdownlint issues, try the npm version: `npm install -g markdownlint-cli`
 
 ### Installation
 
+#### Global Installation (Recommended)
+
 ```shell
-# Install project dependencies
+# Install from source (for development/testing)
+git clone https://github.com/connorludwig/readme-refresh.git
+cd readme-refresh
+npm install
+npm link
+
+# Verify installation
+rereadme --help
+```
+
+#### Local Installation
+
+```shell
+# Clone and install locally
+git clone https://github.com/connorludwig/readme-refresh.git
+cd readme-refresh
 npm install
 
-# Check if all required tools are available
-npm run dev -- --check
+# Check dependencies
+npm run check
 ```
 
 ## Usage
 
-### Basic Usage
+### CLI Tool Usage (Global Installation)
 
 ```shell
-# Run the complete README refresh workflow
-npm run dev
-```
-
-### Advanced Options
-
-```shell
-# Run with interactive mode (pause between steps)
-npm run dev -- --interactive
+# Run the complete README refresh workflow in current directory
+rereadme
 
 # Show detailed command output
-npm run dev -- --verbose
+rereadme --verbose
+
+# Run with interactive mode (pause between steps)
+rereadme --interactive
+
+# Include Confluence MCP server step for external sources
+rereadme --confluence
 
 # Continue processing even if some steps fail
-npm run dev -- --continue
+rereadme --continue
 
 # Keep gitingest context files after completion
-npm run dev -- --keep-context
+rereadme --keep-context
 
 # Check dependencies only
-npm run dev -- --check
+rereadme --check
 
 # Show help
-npm run dev -- --help
+rereadme --help
+```
+
+### Local Development Usage
+
+```shell
+# Run using npm scripts (if not globally installed)
+npm run dev                        # Run basic workflow
+npm run dev -- --verbose          # Show detailed output
+npm run dev -- --interactive      # Run with manual step approval
+npm run dev -- --confluence       # Include Confluence MCP server step
+npm run dev -- --check            # Check dependencies only
+npm run help                       # Show help
 ```
 
 ### Workflow Steps
@@ -93,9 +121,9 @@ The tool executes the following automated workflow:
 
 1. **Dependency Check** - Verifies all required tools are installed
 2. **Context Generation** - Runs gitingest to analyze your codebase
-3. **AI Processing** - Processes README through 3 AI prompts:
+3. **AI Processing** - Processes README through AI prompts:
    - Step 1: Standardizes and cleans existing README structure
-   - Step 2: Integrates external documentation sources
+   - Step 2: Integrates external documentation sources (with `--confluence` flag)
    - Step 3: Updates content based on current codebase analysis
 4. **Formatting** - Applies consistent markdown formatting
 5. **Cleanup** - Removes temporary files (unless `--keep-context` is used)
@@ -144,7 +172,7 @@ readme-refresh/
 
 **Common Issues:**
 
-- **Missing dependencies**: Run `npm run dev -- --check` to identify missing tools
+- **Missing dependencies**: Run `rereadme --check` to identify missing tools
 - **OpenAI API errors**: Ensure `OPENAI_API_KEY` is set and has sufficient credits
 - **Permission errors**: Ensure you have write access to the README.md file
 - **Large repositories**: Gitingest has size limits; adjust include/exclude patterns if needed
