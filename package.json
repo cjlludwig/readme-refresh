@@ -1,13 +1,39 @@
 {
+  "name": "rereadme",
+  "version": "1.0.0",
+  "description": "CLI tool to refresh README automatically with up-to-date information based on code contents, documents, and external sources",
   "type": "module",
+  "bin": {
+    "rereadme": "./bin/rereadme.js"
+  },
+  "keywords": [
+    "readme",
+    "documentation",
+    "cli",
+    "ai",
+    "automation",
+    "gitingest",
+    "openai"
+  ],
+  "author": "Connor Ludwig",
+  "license": "MIT",
+  "homepage": "https://github.com/connorludwig/readme-refresh#readme",
+  "bugs": {
+    "url": "https://github.com/connorludwig/readme-refresh/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/connorludwig/readme-refresh.git"
+  },
   "scripts": {
     "dev": "tsx script.ts",
     "build": "tsc script.ts",
     "start": "node script.js",
-    "check": "npm run dev -- --check",
-    "refresh": "npm run dev",
-    "refresh:interactive": "npm run dev -- --interactive",
-    "help": "npm run dev -- --help"
+    "test": "jest script.spec.ts",
+    "check": "tsx script.ts --check",
+    "refresh": "tsx script.ts",
+    "refresh:interactive": "tsx script.ts --interactive",
+    "help": "tsx script.ts --help"
   },
   "dependencies": {
     "openai": "^5.1.1",
@@ -15,7 +41,13 @@
     "zx": "^8.5.5"
   },
   "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^29.5.14",
     "@types/node": "^22.15.30",
+    "jest": "^30.0.0",
     "tsx": "^4.19.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
