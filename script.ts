@@ -4,6 +4,11 @@
 import { $, echo, question, fs, path, chalk, argv } from 'zx'
 import OpenAI from 'openai'
 import { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/responses'
+import { fileURLToPath } from 'url'
+
+// Get the directory where this script is located (for accessing prompts/templates)
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 // Configuration
 $.verbose = argv.verbose || false
@@ -306,9 +311,9 @@ async function callOpenAI(systemPrompt: string, userContent: string, context: st
 async function processPromptStep(step: number, promptFile: string, context: string = '', previousId: string = ''): Promise<OpenAIResponse> {
   echo(chalk.blue(`🤖 Processing step ${step}: ${promptFile}`))
   
-  const promptPath = path.join('prompts', promptFile)
+  const promptPath = path.join(__dirname, 'prompts', promptFile)
   const systemPrompt = await readFile(promptPath);
-  const template = await readFile('templates/README_TEMPLATE.md');
+  const template = await readFile(path.join(__dirname, 'templates/README_TEMPLATE.md'));
   // const systemPrompt = `README Format:\n\n${template}\n\n---\n${rawPrompt}`
   
   // Read current README content from input file
