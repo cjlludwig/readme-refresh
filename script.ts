@@ -9,6 +9,8 @@ import { ResponseCreateParamsNonStreaming } from 'openai/resources/responses/res
 $.verbose = argv.verbose || false
 const GITINGEST_SIZE_LIMIT = 50000
 const OPENAI_MODEL = 'gpt-4.1-nano' // Cheapest model by default $0.10 per 1M tokens
+const INPUT_FILE = argv.input || 'README.md'
+const OUTPUT_FILE = argv.output || 'README.md'
 
 // OpenAI client - initialized only when needed
 let openai: OpenAI | null = null
@@ -309,11 +311,18 @@ async function processPromptStep(step: number, promptFile: string, context: stri
   const template = await readFile('templates/README_TEMPLATE.md');
   // const systemPrompt = `README Format:\n\n${template}\n\n---\n${rawPrompt}`
   
-  // Read current README content
-  const currentReadme = await readFile('README.md')
+  // Read current README content from input file
+  let currentReadme = ''
+  try {
+    currentReadme = await readFile(INPUT_FILE)
+  } catch (error) {
+    // If input file doesn't exist, start with empty content
+    currentReadme = ''
+    echo(chalk.yellow(`⚠️  Input file ${INPUT_FILE} not found, starting with empty content`))
+  }
   
   // Place static content early for cache
-  const userContent = `README Format:\n\n${template}\n\n---\nCurrent README.md content:\n\n${currentReadme}`
+  const userContent = `README Format:\n\n${template}\n\n---\nCurrent ${INPUT_FILE} content:\n\n${currentReadme}`
   
   const result = await callOpenAI(systemPrompt, userContent, context, previousId)
   
@@ -325,23 +334,30 @@ async function processPromptStep(step: number, promptFile: string, context: stri
 }
 
 async function updateReadme(content: string): Promise<void> {
-  // Backup current README
+  // Backup current README if it exists
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  await fs.copy('README.md', `README.md.backup-${timestamp}`)
+  try {
+    if (await fs.pathExists(OUTPUT_FILE)) {
+      await fs.copy(OUTPUT_FILE, `${OUTPUT_FILE}.backup-${timestamp}`)
+      echo(chalk.dim(`📋 Backed up existing ${OUTPUT_FILE}`))
+    }
+  } catch (error) {
+    echo(chalk.yellow(`⚠️  Could not backup ${OUTPUT_FILE}: ${error}`))
+  }
   
   // Write new README
-  await fs.writeFile('README.md', content.trim() + '\n')
-  echo(chalk.green('✅ README.md updated'))
+  await fs.writeFile(OUTPUT_FILE, content.trim() + '\n')
+  echo(chalk.green(`✅ ${OUTPUT_FILE} updated`))
 }
 
 async function formatReadme(): Promise<void> {
-  echo(chalk.blue('📐 Formatting README.md with markdownlint...'))
+  echo(chalk.blue(`📐 Formatting ${OUTPUT_FILE} with markdownlint...`))
   
   // First try to auto-fix what we can
-  const fixResult = await $({ nothrow: true })`markdownlint --fix README.md`
+  const fixResult = await $({ nothrow: true })`markdownlint --fix ${OUTPUT_FILE}`
   
   if (fixResult.exitCode === 0) {
-    echo(chalk.green('✅ README.md formatted successfully'))
+    echo(chalk.green(`✅ ${OUTPUT_FILE} formatted successfully`))
   } else {
     // If there are issues that can't be auto-fixed, show them as warnings
     echo(chalk.yellow('⚠️  Some markdown issues found:'))
@@ -358,6 +374,12 @@ async function formatReadme(): Promise<void> {
 async function runWorkflow(): Promise<void> {
   try {
     echo(chalk.blue('🚀 Starting README refresh workflow'))
+    
+    // Show input/output file configuration
+    if (INPUT_FILE !== 'README.md' || OUTPUT_FILE !== 'README.md') {
+      echo(chalk.blue(`📄 Input file: ${INPUT_FILE}`))
+      echo(chalk.blue(`📝 Output file: ${OUTPUT_FILE}`))
+    }
     
     // Check dependencies
     if (!await checkDependencies()) {
@@ -454,6 +476,8 @@ ${chalk.yellow('Options:')}
   --keep-context  Keep gitingest output files after completion
   --check         Only check dependencies, don't run workflow
   --confluence    Include step 2 (external sources) using Confluence MCP server
+  --input FILE    Read current content from specified file instead of README.md
+  --output FILE   Output to specified file instead of README.md
 
 ${chalk.yellow('Environment Variables:')}
   OPENAI_API_KEY  Required - Your OpenAI API key
@@ -463,11 +487,13 @@ ${chalk.yellow('AI Model:')}
   Uses gpt-4.1-nano (cost-effective: $0.10 per 1M input tokens, $0.40 per 1M output tokens)
 
 ${chalk.yellow('Examples:')}
-  rereadme                        # Run basic workflow (steps 1 & 2)
-  rereadme --confluence           # Run with Confluence MCP server (steps 1, 2 & 3)
-  rereadme --interactive          # Run with manual step approval
-  rereadme --verbose              # Show detailed output
-  rereadme --check                # Check dependencies only
+  rereadme                           # Run basic workflow (steps 1 & 2)
+  rereadme --confluence              # Run with Confluence MCP server (steps 1, 2 & 3)
+  rereadme --interactive             # Run with manual step approval
+  rereadme --verbose                 # Show detailed output
+  rereadme --check                   # Check dependencies only
+  rereadme --output README-v2.md     # Output to custom filename
+  rereadme --input some_doc.md --output test_doc.md  # Read from one file, write to another
 
 ${chalk.yellow('For pyenv users:')}
   Make sure pyenv shims are first in your PATH:
